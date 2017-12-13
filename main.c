@@ -48,7 +48,7 @@ struct dirent *next_valid_entry(dir *dir_stack, unsigned int stack_height);
 
 void exit_directory();
 
-void enter_directory();
+void enter_directory(dir **dir_stack, unsigned int stack_height, struct dirent *curr_ent);
 
 char *generate_path(dir *dir_stack, unsigned int stack_height);
 
@@ -83,6 +83,7 @@ void build_tree (char *start)
 	unsigned int stack_height = 0;
 	dir *dir_stack;
 	init_stack(&dir_stack, start);
+	char r;
 	
 	stack_height++;
 	
@@ -90,15 +91,23 @@ void build_tree (char *start)
 	
 	curr_ent = next_valid_entry(dir_stack, stack_height);
 	next_ent = next_valid_entry(dir_stack, stack_height);
-	//next_ent = next_valid_entry();
-		
+	//printf("stack height: %d\n", stack_height);
 	/*in case the command line argument was an empty directory*/
 	if(curr_ent == NULL){
 		return;
 	}
 	while (stack_height > 0){
-		if (curr_ent == NULL){
+		/*scanf("%c", &r);*//*for step by step execution*/ 
+		if (curr_ent == NULL){/*when we decrease the stack*/
 			stack_height--;
+			if (stack_height == 0)
+				return;
+			exit_directory(&dir_stack, stack_height);
+			curr_ent = dir_stack[stack_height-1].n_entry;
+			next_ent = next_valid_entry(dir_stack, stack_height);			
+			//printf("stack height: %d\n", stack_height);
+			if(stack_height == 0)
+				return;
 		} else {
 			if (next_ent == NULL)
 				last_entry = 1;
@@ -106,45 +115,24 @@ void build_tree (char *start)
 				last_entry = 0;
 			
 			file_info = open_file(dir_stack, curr_ent, stack_height);
-			//OVDE SI STAO
-			curr_ent = next_ent;
-			next_ent = next_valid_entry(dir_stack, stack_height);
-		}
-		
-	}
-	
-	/*
-	while(stack_height > 0){
-		if (curr_ent == NULL){
-			exit_directory();
-			stack_height--;
-			if(stack_height){
-				curr_ent = dir_stack2[stack_height-1].l_entry;
-				next_ent = next_valid_entry();
-			}
-		}
-		else{
-			file_info = open_file();
-			if(next_ent == NULL)
-				last_entry = 1;
-			print_layer();
+			print_layer(stack_height, dir_stack, curr_ent, file_info, last_entry);
 			if(S_ISDIR(file_info.st_mode)){
+				//printf("stack height: %d\n", stack_height);
+				dir_stack[stack_height-1].n_entry = next_ent;
 				if(last_entry)
-					tp_stack[stack_height-1] = SPACE;
-				else 
-					tp_stack[stack_height-1] = BRANCH;
-				dir_stack2[stack_height-1].l_entry = next_ent;
+					dir_stack[stack_height-1].tree_part = SPACE;
+				else
+					dir_stack[stack_height-1].tree_part = BRANCH;
 				stack_height++;
-				enter_directory();
-				
-				curr_ent = next_valid_entry();
-				next_ent = next_valid_entry();
+				enter_directory(&dir_stack, stack_height, curr_ent);
+				curr_ent = next_valid_entry(dir_stack, stack_height);
+				next_ent = next_valid_entry(dir_stack, stack_height);
 			} else {
-			curr_ent = next_ent;
-			next_ent = next_valid_entry();
+				curr_ent = next_ent;
+				next_ent = next_valid_entry(dir_stack, stack_height);
 			}
 		}
-	}*/	
+	}	
 	return;
 }
 
@@ -180,6 +168,7 @@ void print_entry(struct dirent *curr_ent, struct stat file_info)
 			printf(ANSI_COLOR_LIGHT_BLUE "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
 			break;
 		case S_IFLNK :
+			printf("LINK :");
 			printf(ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
 			break;
 		case S_IFCHR :
@@ -203,14 +192,47 @@ struct dirent *next_valid_entry(dir *dir_stack, unsigned int stack_height)
 	return result;
 }
 
-void exit_directory()
+void exit_directory(dir **dir_stack, unsigned int stack_height)
 {	
+	dir *tmp;
 	
+	free((*dir_stack)[stack_height].name);
+	
+	closedir((*dir_stack)[stack_height].stream);
+	
+	tmp = realloc((*dir_stack), stack_height*sizeof(dir));
+	if(tmp == NULL){
+		printf("Error while reallocating stac: exit_directory\n");
+		exit(1);
+	}
+	(*dir_stack) = tmp;
+	
+	(*dir_stack)[stack_height-1].tree_part = STEM;
 }
 
-void enter_directory()
+void enter_directory(dir **dir_stack, unsigned int stack_height, struct dirent *curr_ent)
 {
+	dir *tmp;
+	char *path;
 	
+	tmp = realloc((*dir_stack), stack_height*sizeof(dir));
+	if (tmp == NULL){
+		printf("Error while reallocating the directory stack\n");
+		exit(1);
+	} else
+		(*dir_stack) = tmp;
+	
+	(*dir_stack)[stack_height-1].name = strdup(curr_ent->d_name);
+	
+	path = generate_path((*dir_stack), stack_height);
+	
+	//printf("Now entering: %s\n", path);
+	
+	(*dir_stack)[stack_height-1].stream = opendir(path);
+	
+	free(path);
+	
+	(*dir_stack)[stack_height-1].tree_part = STEM;
 }
 
 char *generate_path(dir *dir_stack, unsigned int stack_height)
@@ -257,7 +279,7 @@ struct stat open_file(dir *dir_stack, struct dirent *curr_ent, unsigned int stac
 	free(path);
 	strcat(full_path, curr_ent->d_name);
 	
-	printf("%s\n", full_path);
+	//printf("%s\n", full_path);
 	
 	err = stat(full_path, &info);
 	if(err != 0){
