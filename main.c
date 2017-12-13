@@ -42,7 +42,7 @@ void print_layer(unsigned int stack_height, dir *dir_stack,
 		 struct dirent *curr_ent, struct stat file_info,
 		 int last_entry);
 
-void print_entry(struct dirent *curr_ent, struct stat file_info);
+void print_entry(char *path, struct stat file_info);
 
 struct dirent *next_valid_entry(dir *dir_stack, unsigned int stack_height);
 
@@ -60,19 +60,32 @@ char *path_to_entry(dir *dir_stack, struct dirent *curr_ent, unsigned int stack_
 
 int main(int argc,char **argv)
 {
+	int er;
 	char *start;
-	
-	if (argc == 1)
+	struct stat info;
+	if (argc < 2){
 		start = ".";
-	else
-		start = argv[1];
-	
-	if(access(start, F_OK)){
-		perror("Couldn't open the given path");	
-		exit(1);
+		build_tree(start);
 	}
-	build_tree(start);
-	
+	else {
+		for(int i = 1; i < argc; i++) {
+			er = stat(argv[i], &info);
+			if (er == -1){
+				perror("Coudln't open file");
+				printf("File is :%s\n", argv[i]);
+			}
+			if(S_ISDIR(info.st_mode)){
+				start = argv[i];
+				if(access(start, F_OK)){
+					perror("Couldn't open the given path");	
+					exit(1);
+				}
+				build_tree(start);
+			} else {
+				printf("%s is not a directory or a link to a directory!\n", argv[i]);
+			}
+		}
+	}
 	return 0;
 }
 
@@ -165,26 +178,25 @@ void print_layer(unsigned int stack_height, dir *dir_stack,
 				break;
 		}
 	}
-	print_entry(curr_ent, file_info);
+	print_entry(curr_ent->d_name, file_info);
 }
 
-void print_entry(struct dirent *curr_ent, struct stat file_info)
+void print_entry(char *path, struct stat file_info)
 {
 	mode_t mode = S_IFMT & file_info.st_mode;
 	
 	switch (mode){
 		case S_IFDIR :
-			printf(ANSI_COLOR_LIGHT_BLUE "%s -D\n" ANSI_COLOR_RESET, curr_ent->d_name);
+			printf(ANSI_COLOR_LIGHT_BLUE "%s -D\n" ANSI_COLOR_RESET, path);
 			break;
 		case S_IFLNK :
-			printf("LINK :");
-			printf(ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
+			printf(ANSI_COLOR_CYAN "%s -> \n" ANSI_COLOR_RESET, path);
 			break;
 		case S_IFCHR :
-			printf(ANSI_COLOR_YELLOW "%s -B\n" ANSI_COLOR_RESET, curr_ent->d_name);
+			printf(ANSI_COLOR_YELLOW "%s -B\n" ANSI_COLOR_RESET, path);
 			break;
 		default :
-			printf("%s -R\n", curr_ent->d_name);
+			printf("%s -R\n", path);
 	}
 }
 
