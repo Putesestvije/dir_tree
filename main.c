@@ -56,6 +56,8 @@ struct stat open_file(dir *dir_stack, struct dirent *curr_ent, unsigned int stac
 
 void init_stack(dir **dir_stack, char *start);
 
+char *path_to_entry(dir *dir_stack, struct dirent *curr_ent, unsigned int stack_height);
+
 int main(int argc,char **argv)
 {
 	char *start;
@@ -78,12 +80,12 @@ void build_tree (char *start)
 {
 	struct dirent *curr_ent = NULL, *next_ent = NULL;
 	struct stat file_info;
-	int n_files = 0, n_folders = 0;
+	unsigned int n_files = 0, n_folders = 0;
 	int last_entry = 0;
 	unsigned int stack_height = 0;
 	dir *dir_stack;
 	init_stack(&dir_stack, start);
-	char r;
+	char r, *full_path;
 	
 	stack_height++;
 	
@@ -97,17 +99,15 @@ void build_tree (char *start)
 		return;
 	}
 	while (stack_height > 0){
-		/*scanf("%c", &r);*//*for step by step execution*/ 
+		//scanf("%c", &r);/*for step by step execution*/ 
 		if (curr_ent == NULL){/*when we decrease the stack*/
 			stack_height--;
 			if (stack_height == 0)
-				return;
+				break;
 			exit_directory(&dir_stack, stack_height);
 			curr_ent = dir_stack[stack_height-1].n_entry;
 			next_ent = next_valid_entry(dir_stack, stack_height);			
 			//printf("stack height: %d\n", stack_height);
-			if(stack_height == 0)
-				return;
 		} else {
 			if (next_ent == NULL)
 				last_entry = 1;
@@ -115,8 +115,14 @@ void build_tree (char *start)
 				last_entry = 0;
 			
 			file_info = open_file(dir_stack, curr_ent, stack_height);
+			//printf("inspecting: %s\n", curr_ent->d_name);
 			print_layer(stack_height, dir_stack, curr_ent, file_info, last_entry);
-			if(S_ISDIR(file_info.st_mode)){
+			if(S_ISLNK(file_info.st_mode)){
+				curr_ent = next_ent;
+				next_ent = next_valid_entry(dir_stack, stack_height);
+				n_files++;
+			}
+			else if(S_ISDIR(file_info.st_mode)){
 				//printf("stack height: %d\n", stack_height);
 				dir_stack[stack_height-1].n_entry = next_ent;
 				if(last_entry)
@@ -127,12 +133,15 @@ void build_tree (char *start)
 				enter_directory(&dir_stack, stack_height, curr_ent);
 				curr_ent = next_valid_entry(dir_stack, stack_height);
 				next_ent = next_valid_entry(dir_stack, stack_height);
+				n_folders++;
 			} else {
 				curr_ent = next_ent;
 				next_ent = next_valid_entry(dir_stack, stack_height);
+				n_files++;
 			}
 		}
 	}	
+	printf("\n%u directories, %u files\n", n_folders, n_files);
 	return;
 }
 
@@ -165,17 +174,17 @@ void print_entry(struct dirent *curr_ent, struct stat file_info)
 	
 	switch (mode){
 		case S_IFDIR :
-			printf(ANSI_COLOR_LIGHT_BLUE "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
+			printf(ANSI_COLOR_LIGHT_BLUE "%s -D\n" ANSI_COLOR_RESET, curr_ent->d_name);
 			break;
 		case S_IFLNK :
 			printf("LINK :");
 			printf(ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
 			break;
 		case S_IFCHR :
-			printf(ANSI_COLOR_YELLOW "%s\n" ANSI_COLOR_RESET, curr_ent->d_name);
+			printf(ANSI_COLOR_YELLOW "%s -B\n" ANSI_COLOR_RESET, curr_ent->d_name);
 			break;
 		default :
-			printf("%s\n", curr_ent->d_name);
+			printf("%s -R\n", curr_ent->d_name);
 	}
 }
 
@@ -261,27 +270,12 @@ char *generate_path(dir *dir_stack, unsigned int stack_height)
 struct stat open_file(dir *dir_stack, struct dirent *curr_ent, unsigned int stack_height)
 {
 	struct stat info;
-	char *path, *full_path;
-	unsigned int full_len;
+	char *full_path;
 	int err;
+		
+	full_path = path_to_entry(dir_stack, curr_ent, stack_height);
 	
-	
-	
-	path = generate_path(dir_stack, stack_height);
-	
-	full_len += strlen(path);
-	full_len += strlen(curr_ent->d_name);
-	full_len++; /* and one more for the \0'*/
-	
-	full_path = malloc(full_len * sizeof(char));
-	
-	strcpy(full_path, path);
-	free(path);
-	strcat(full_path, curr_ent->d_name);
-	
-	//printf("%s\n", full_path);
-	
-	err = stat(full_path, &info);
+	err = lstat(full_path, &info);
 	if(err != 0){
 		perror("Error reading file");
 		printf("at %s", full_path);
@@ -307,4 +301,27 @@ void init_stack(dir **dir_stack, char *start)
 	(*dir_stack)->tree_part = STEM;
 	
 	(*dir_stack)->n_entry = NULL;
+}
+
+char *path_to_entry(dir *dir_stack, struct dirent *curr_ent, unsigned int stack_height){
+	char *path, *full_path, *tmp;
+	unsigned int full_len;
+	
+	path = generate_path(dir_stack, stack_height);
+	full_len += strlen(path);
+	full_len += strlen(curr_ent->d_name);
+	full_len++;
+	
+	tmp = malloc(full_len * sizeof(char));
+	if (tmp == NULL){
+		printf("Error allocating space for full path: path_to_entry\n");
+		exit(1);
+	} else 
+		full_path = tmp;
+	
+	strcpy(full_path, path);
+	free(path);
+	strcat(full_path, curr_ent->d_name);
+	
+	return full_path;
 }
