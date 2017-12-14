@@ -263,7 +263,7 @@ void print_entry(char *name, struct stat file_info, char *full_path)
 
                 r = readlink(full_path, link_path, link_len);
                 link_path[link_len] = '\0';
-                printf("%s \n", link_path);
+                //printf("%s \n", link_path);
 
                 err = stat(link_path, &sym_info);
                 if (err == -1){
